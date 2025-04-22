@@ -3,7 +3,7 @@ use pinocchio::{account_info::AccountInfo, instruction::Signer, program_error::P
 use pinocchio_system::instructions::CreateAccount;
 use pinocchio_token::instructions::{FreezeAccount, SetAuthority};
 
-use crate::{student_account::StudentAccount, uni_account::UniAccount, vire_account::VireAccount};
+use crate::{student_account::StudentAccount, uni_account::UniAccount};
 
 
 
@@ -45,30 +45,37 @@ impl <'a> InitializeStudentContext <'a> for &[AccountInfo] {
         else {
             return Err(ProgramError::NotEnoughAccountKeys);
         };
+ 
 
-        // Adding(setting-up(path)) the data to state (Read-Write) 
-        let mut uni_account_data = *bytemuck::try_from_bytes_mut::<UniAccount>(&mut uni_account.try_borrow_mut_data()?)
-        .map_err(|_| ProgramError::InvalidAccountData)?;   
+        // Doing some checks for accounts
+        // Check if student is a signer
+        if !student.is_signer() {
+            return Err(ProgramError::MissingRequiredSignature);
+        }
 
-        // Adding(setting-up(path)) the data to state (Read-Write)
-        let mut student_account_data = *bytemuck::try_from_bytes_mut::<StudentAccount>(&mut student_account.try_borrow_mut_data()?)
-        .map_err(|_| ProgramError::InvalidAccountData)?;  
+        // Verify subject_account is owned by the current program
+        if !subject_account.is_owned_by(&crate::ID) {
+            return Err(ProgramError::IncorrectProgramId);
+        }
 
-        // Adding(setting-up(path)) the data to state (Read-Write)
-        let vire_account_data = *bytemuck::try_from_bytes_mut::<VireAccount>(&mut vire_account.try_borrow_mut_data()?)
-        .map_err(|_| ProgramError::InvalidAccountData)?;   
+        // Verify uni_account is owned by the current program
+        if !uni_account.is_owned_by(&crate::ID) {
+            return Err(ProgramError::IncorrectProgramId);
+        }
 
-        // doing some checks for accounts
-        assert!(student.is_signer());
-        assert!(subject_account.is_owned_by(&crate::ID));
-        assert!(uni_account.is_owned_by(&crate::ID));
-        assert!(vire_account.is_owned_by(&crate::ID)); 
+        // Verify vire_account is owned by the current program
+        if !vire_account.is_owned_by(&crate::ID) {
+            return Err(ProgramError::IncorrectProgramId);
+        }
 
+        
         let student_seeds_with_bump = &[student.key().as_ref(), subject_account.key().as_ref(), &[args.bump]];
         let student_account_derived = pubkey::create_program_address(student_seeds_with_bump, &crate::ID)?;
 
-        // checking both created pda account and input pda accounts are same
-        assert!(student_account_derived == student_account.key().as_ref());
+        // Ensure derived PDA matches the provided student_account
+        if student_account_derived != student_account.key().as_ref() {
+            return Err(ProgramError::InvalidSeeds);
+        }
         let bump_ref = &[args.bump];
         
         // creating signer seeds vire pda 
@@ -82,67 +89,63 @@ impl <'a> InitializeStudentContext <'a> for &[AccountInfo] {
             owner: &crate::ID,
             lamports: Rent::get()?.minimum_balance(StudentAccount::LEN),
         }
-        .invoke_signed(&[signer])?;
+        .invoke_signed(&[signer.clone()])?;
 
+
+        let mut uni_data_ref = uni_account.try_borrow_mut_data()?;
+        let uni_account_data = bytemuck::try_from_bytes_mut::<UniAccount>(&mut uni_data_ref)
+            .map_err(|_| ProgramError::InvalidAccountData)?;
+
+        let mut student_data_ref = student_account.try_borrow_mut_data()?;
+        let student_account_data = bytemuck::try_from_bytes_mut::<StudentAccount>(&mut student_data_ref)
+            .map_err(|_| ProgramError::InvalidAccountData)?;
         
 
         let current_time = ((Clock::get()?.unix_timestamp)).to_le_bytes();
 
-        // Adding(setting-up(adding)) the data to state (Read-Write)
-        student_account_data.clone_from(&StudentAccount { 
-            student_key: *student.key(), 
-            student_id: uni_account_data.student_number, 
-            time_start:  unsafe { std::mem::transmute(current_time) }, //<---- how can i make it better
-            semesters: (1u64).to_le_bytes(), 
-            student_bump: args.bump 
-        });
+        student_account_data.student_key = *student.key();
+        student_account_data.student_id = uni_account_data.student_number;
+        student_account_data.time_start = current_time;  // Assuming time_start is [u8; 8] //<---- how can i make it better //time_start: unsafe { std::mem::transmute(current_time) },
+        student_account_data.semesters = (1u64).to_le_bytes();
+        student_account_data.student_bump = args.bump;
+
+        
 
         uni_account_data.student_number = (u64::from_le_bytes(uni_account_data.student_number) + 1).to_le_bytes();
+
 
         // <---Minting Card Nft---> (How can I add metadata)
 
         pinocchio_token::instructions::InitializeMint2{
             mint: card_mint,
             decimals: 0,
-            mint_authority: vire_account.key(),
-            freeze_authority: Some(vire_account.key()),
-        }.invoke()?; //<---- who is the payer
+            mint_authority: student_account.key(),
+            freeze_authority: Some(student_account.key()),
+        }.invoke()?; 
 
         pinocchio_token::instructions::MintToChecked{
             mint: card_mint,
             account: student_card_ata,
-            mint_authority: vire_account,
+            mint_authority: student_account,
             amount: 1,
             decimals: 0, 
-        }.invoke()?; //<---- who is the payer
+        }
+        .invoke_signed(&[signer.clone()])?; 
 
 
-
-        let vire_account_seeds = &[b"vire", vire_account_data.admin_key.as_ref()];
-        let (vire_account_derived, vire_account_bump) = 
-            pubkey::try_find_program_address(vire_account_seeds, &crate::ID )
-            .ok_or(ProgramError::InvalidSeeds)?;
-
-        // checking both created pda account and input pda accounts are same
-        assert!(vire_account_derived == vire_account.key().as_ref());
-        let bump_ref = &[vire_account_bump];
-        
-        // creating signer seeds vire pda 
-        let signer_seeds = seeds!(b"vire", vire_account_data.admin_key.as_ref(), bump_ref);
-        let signer = Signer::from(&signer_seeds);
-
+        // <---Staking(Freezing)---> 
 
         SetAuthority{
             account: student_card_ata,
-            authority: student,
+            authority: student, // <--- are we just setting freezeauth or this auth field also??
             authority_type: pinocchio_token::instructions::AuthorityType::FreezeAccount,
-            new_authority: Some(vire_account.key()),
+            new_authority: Some(student_account.key()),
         }.invoke()?;
 
         FreezeAccount{
             account: student_card_ata,
             mint: card_mint,
-            freeze_authority: vire_account,
+            freeze_authority: student_account,
         }
         .invoke_signed(&[signer])?;
 

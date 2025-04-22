@@ -2,7 +2,7 @@ use bytemuck;
 use pinocchio::{account_info::AccountInfo, instruction::Signer, program_error::ProgramError, pubkey, seeds, sysvars::{clock::Clock, Sysvar}, ProgramResult};
 use pinocchio_token::instructions::{SetAuthority, ThawAccount};
 
-use crate::{student_account::StudentAccount, subject_account::SubjectAccount, vire_account::VireAccount};
+use crate::{student_account::StudentAccount, subject_account::SubjectAccount};
 
 
 
@@ -19,7 +19,6 @@ impl <'a> Unstake<'a> for &[AccountInfo] {
             student, 
             student_account,
             subject_account,
-            vire_account, 
             card_mint,
             student_card_ata,
             _system_program, 
@@ -30,67 +29,86 @@ impl <'a> Unstake<'a> for &[AccountInfo] {
         };
 
 
-        let student_account_data = *bytemuck::try_from_bytes_mut::<StudentAccount>(&mut student_account.try_borrow_mut_data()?)
-        .map_err(|_| ProgramError::InvalidAccountData)?;  
+        // Use read-only access for accounts we don't modify
+        let student_data_ref = student_account.try_borrow_data()?;
+        let student_account_data = bytemuck::try_from_bytes::<StudentAccount>(&student_data_ref)
+            .map_err(|_| ProgramError::InvalidAccountData)?;
+        
+   
+        
+        
+        let subject_data_ref = subject_account.try_borrow_data()?;
+        let subject_account_data = bytemuck::try_from_bytes::<SubjectAccount>(&subject_data_ref)
+            .map_err(|_| ProgramError::InvalidAccountData)?;
 
-        let vire_account_data = *bytemuck::try_from_bytes::<VireAccount>(&mut vire_account.try_borrow_data()?)
-        .map_err(|_| ProgramError::InvalidAccountData)?;  
 
-        let subject_account_data = *bytemuck::try_from_bytes_mut::<SubjectAccount>(&mut subject_account.try_borrow_mut_data()?)
-        .map_err(|_| ProgramError::InvalidAccountData)?;    
+        // Check if student has completed all required semesters
+        if student_account_data.semesters != subject_account_data.max_semester {
+            return Err(ProgramError::InvalidArgument);
+        }
 
-
-        assert!(student_account_data.semesters == subject_account_data.max_semester);
-
+        // Time calculations 
         const SECONDS_IN_A_MONTH: i64 = 30 * 24 * 60 * 60; // 30 days in seconds
         
         let max_semester = i64::from_le_bytes(subject_account_data.max_semester);
         let semester_months = i64::from_le_bytes(subject_account_data.semester_months);
-
-        let required_wait_time: i64 = SECONDS_IN_A_MONTH * max_semester * semester_months;
-
-        let current_time = ((Clock::get()?.unix_timestamp)).to_le_bytes();
-
-        let current_timestamp = i64::from_le_bytes(current_time);
+        let required_wait_time = SECONDS_IN_A_MONTH * max_semester * semester_months;
+        
+        let current_timestamp = Clock::get()?.unix_timestamp;
         let start_timestamp = i64::from_le_bytes(student_account_data.time_start);
 
         // Main check (Verifies whether the degree duration has been completed)
-        assert!(current_timestamp - start_timestamp < required_wait_time);
+        // Check that degree duration is not yet completed
+        if current_timestamp - start_timestamp < required_wait_time {
+            return Err(ProgramError::InvalidArgument);
+        }
 
-        // doing some checks for accounts
-        assert!(student.is_signer());
-        assert!(student_account.is_owned_by(&crate::ID));
-        assert!(subject_account.is_owned_by(&crate::ID));
-        assert!(vire_account.is_owned_by(&crate::ID)); 
+        // Doing some checks for accounts
+        // Check if student is a signer
+        if !student.is_signer() {
+            return Err(ProgramError::MissingRequiredSignature);
+        }
 
-        let vire_account_seeds = &[b"vire", vire_account_data.admin_key.as_ref()];
-        let (vire_account_derived, vire_account_bump) = 
-            pubkey::try_find_program_address(vire_account_seeds, &crate::ID )
+        // Verify student_account is owned by the current program
+        if !student_account.is_owned_by(&crate::ID) {
+            return Err(ProgramError::IncorrectProgramId);
+        }
+
+        // Verify subject_account is owned by the current program
+        if !subject_account.is_owned_by(&crate::ID) {
+            return Err(ProgramError::IncorrectProgramId);
+        }
+        
+
+        let student_account_seeds = &[student.key().as_ref(), subject_account.key().as_ref()];
+        let (student_account_derived, student_account_bump) = 
+            pubkey::try_find_program_address(student_account_seeds, &crate::ID )
             .ok_or(ProgramError::InvalidSeeds)?;
 
-        // checking both created pda account and input pda accounts are same
-        assert!(vire_account_derived == vire_account.key().as_ref());
-        let bump_ref = &[vire_account_bump];
+        // Ensure derived PDA matches the provided student_account
+        if student_account_derived != student_account.key().as_ref() {
+            return Err(ProgramError::InvalidSeeds);
+        }
+        let bump_ref = &[student_account_bump];
         
         // creating signer seeds vire pda 
-        let signer_seeds = seeds!(b"vire", vire_account_data.admin_key.as_ref(), bump_ref);
+        let signer_seeds = seeds!(student.key().as_ref(), subject_account.key().as_ref(), bump_ref);
         let signer = Signer::from(&signer_seeds);
-        let signer1 = Signer::from(&signer_seeds);
 
         ThawAccount{
             account: student_card_ata,
             mint: card_mint,
-            freeze_authority: vire_account,
+            freeze_authority: student_account,
         }
-        .invoke_signed(&[signer])?;
+        .invoke_signed(&[signer.clone()])?;
         
         SetAuthority{
             account: student_card_ata,
-            authority: vire_account,
+            authority: student_account, // <--- student or student_account who??
             authority_type: pinocchio_token::instructions::AuthorityType::FreezeAccount,
             new_authority: Some(student.key()),
         }
-        .invoke_signed(&[signer1])?;
+        .invoke_signed(&[signer])?;
 
 
        

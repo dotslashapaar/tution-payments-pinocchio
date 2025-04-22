@@ -55,18 +55,20 @@ impl <'a> InitializeVireContext <'a> for &[AccountInfo] {
             return Err(ProgramError::NotEnoughAccountKeys);
         };
 
-         // Adding(setting-up(path)) the data to state (Read-Write)
-         let mut vire_account_data = *bytemuck::try_from_bytes_mut::<VireAccount>(&mut vire_account.try_borrow_mut_data()?)
-         .map_err(|_| ProgramError::InvalidAccountData)?;   
+          
 
         // doing some checks for accounts
-        assert!(admin.is_signer());
+        if !admin.is_signer() {
+            return Err(ProgramError::MissingRequiredSignature);
+        }
 
         let vire_seeds_with_bump = &[b"vire", admin.key().as_ref(), &[args.bump]];
         let vire_account_derived = pubkey::create_program_address(vire_seeds_with_bump, &crate::ID)?;
 
         // checking both created pda account and input pda accounts are same
-        assert!(vire_account_derived == vire_account.key().as_ref());
+        if vire_account_derived != vire_account.key().as_ref() {
+            return Err(ProgramError::InvalidSeeds);
+        }
         let bump_ref = &[args.bump];
         
         // creating signer seeds vire pda 
@@ -82,22 +84,36 @@ impl <'a> InitializeVireContext <'a> for &[AccountInfo] {
         }
         .invoke_signed(&[signer])?;
 
-       
+
+        // Adding(setting-up(path)) the data to state (Read-Write)
+        let mut account_data_ref  = vire_account.try_borrow_mut_data()?;
+        let vire_account_data = bytemuck::try_from_bytes_mut::<VireAccount>(&mut account_data_ref )
+        .map_err(|_| ProgramError::InvalidAccountData)?;  
+
 
         // Adding(setting-up(adding)) the data to state (Read-Write)
-        vire_account_data.clone_from(&VireAccount { 
-            admin_key: *admin.key(), 
-            uni_number: (1u64).to_le_bytes(), //<----------
-            transaction_fee_uni: args.transaction_fee_uni, 
-            transaction_fee_student: args.transaction_fee_student, 
-            vire_bump: args.bump 
-        });
+        // <--References (Zero-Copy)-->
+        vire_account_data.admin_key = *admin.key();
+        vire_account_data.uni_number = (1u64).to_le_bytes(); //<---------- explain please (any other options)
+        vire_account_data.transaction_fee_uni = args.transaction_fee_uni;
+        vire_account_data.transaction_fee_student = args.transaction_fee_student;
+        vire_account_data.vire_bump = args.bump;
+
+        // Adding(setting-up(adding)) the data to state (Read-Write)
+        // <--Dereferencing (Copying)-->
+        // vire_account_data.clone_from(&VireAccount { 
+        //     admin_key: *admin.key(), 
+        //     uni_number: (1u64).to_le_bytes(), //<----------
+        //     transaction_fee_uni: args.transaction_fee_uni, 
+        //     transaction_fee_student: args.transaction_fee_student, 
+        //     vire_bump: args.bump 
+        // });
 
         pinocchio_token::instructions::InitializeAccount3{
             account: treasury,
             mint: mint_usdc,
             owner: vire_account.key(),
-        };
+        }.invoke()?;
         
         // InitializeAccount{
         //     account: todo!(),

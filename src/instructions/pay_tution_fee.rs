@@ -33,46 +33,88 @@ impl <'a> PayTutionFeeContext<'a> for &[AccountInfo] {
             return Err(ProgramError::NotEnoughAccountKeys);
         };
 
+        // Read-only account data access first
+        let vire_data_ref = vire_account.try_borrow_data()?;
+        let vire_account_data = bytemuck::try_from_bytes::<VireAccount>(&vire_data_ref)
+            .map_err(|_| ProgramError::InvalidAccountData)?;  
 
-        let uni_account_data = *bytemuck::try_from_bytes_mut::<UniAccount>(&mut uni_account.try_borrow_mut_data()?)
-        .map_err(|_| ProgramError::InvalidAccountData)?;   
+        let uni_data_ref = uni_account.try_borrow_data()?;
+        let uni_account_data = bytemuck::try_from_bytes::<UniAccount>(&uni_data_ref)
+            .map_err(|_| ProgramError::InvalidAccountData)?;
+        
+        let subject_data_ref = subject_account.try_borrow_data()?;
+        let subject_account_data = bytemuck::try_from_bytes::<SubjectAccount>(&subject_data_ref)
+            .map_err(|_| ProgramError::InvalidAccountData)?;  
 
-        let mut student_account_data = *bytemuck::try_from_bytes_mut::<StudentAccount>(&mut student_account.try_borrow_mut_data()?)
-        .map_err(|_| ProgramError::InvalidAccountData)?;  
+        // Mutable account data access
+        let mut student_data_ref = student_account.try_borrow_mut_data()?;
+        let student_account_data = bytemuck::try_from_bytes_mut::<StudentAccount>(&mut student_data_ref)
+            .map_err(|_| ProgramError::InvalidAccountData)?;
 
-        let vire_account_data = *bytemuck::try_from_bytes::<VireAccount>(&mut vire_account.try_borrow_data()?)
-        .map_err(|_| ProgramError::InvalidAccountData)?;  
 
-        let subject_account_data = *bytemuck::try_from_bytes_mut::<SubjectAccount>(&mut subject_account.try_borrow_mut_data()?)
-        .map_err(|_| ProgramError::InvalidAccountData)?;    
+        let student_semesters = u64::from_le_bytes(student_account_data.semesters);
+        let max_semesters = u64::from_le_bytes(subject_account_data.max_semester);
 
-        assert!(student_account_data.semesters < subject_account_data.max_semester);
-
-        if u64::from_le_bytes(student_account_data.semesters) == 1 {
-            let current_time = ((Clock::get()?.unix_timestamp)).to_le_bytes();
-            student_account_data.time_start = unsafe { std::mem::transmute(current_time) };
-
+        // Check if student has not exceeded max semesters
+        if student_semesters > max_semesters {
+            return Err(ProgramError::InvalidArgument);
         }
 
-        // doing some checks for accounts
-        assert!(student.is_signer());
-        assert!(uni_admin.key() == &uni_account_data.uni_key);
-        assert!(student_account.is_owned_by(&crate::ID));
-        assert!(subject_account.is_owned_by(&crate::ID));
-        assert!(uni_account.is_owned_by(&crate::ID));
-        assert!(vire_account.is_owned_by(&crate::ID)); 
 
-        assert!(student_ata_usdc.is_owned_by(student.key()));
-        assert!(uni_ata_usdc.is_owned_by(uni_admin.key()));
-        assert!(treasury.is_owned_by(vire_account.key()));
+        // Update first semester time if needed
+        if student_semesters == 1 {
+            let current_time = Clock::get()?.unix_timestamp.to_le_bytes();
+            student_account_data.time_start = current_time; 
+        }
 
-        // First convert all byte arrays to u64
+        // Doing some checks for accounts
+        // Check if student is a signer
+        if !student.is_signer() {
+            return Err(ProgramError::MissingRequiredSignature);
+        }
+
+        // Verify uni_admin key matches the stored key in uni_account
+        if uni_admin.key() != &uni_account_data.uni_key {
+            return Err(ProgramError::InvalidArgument);
+        }
+
+        // Verify program-owned accounts
+        if !student_account.is_owned_by(&crate::ID) {
+            return Err(ProgramError::IncorrectProgramId);
+        }
+
+        if !subject_account.is_owned_by(&crate::ID) {
+            return Err(ProgramError::IncorrectProgramId);
+        }
+
+        if !uni_account.is_owned_by(&crate::ID) {
+            return Err(ProgramError::IncorrectProgramId);
+        }
+
+        if !vire_account.is_owned_by(&crate::ID) {
+            return Err(ProgramError::IncorrectProgramId);
+        }
+
+        // Verify token account ownerships
+        if !student_ata_usdc.is_owned_by(student.key()) {
+            return Err(ProgramError::IllegalOwner);
+        }
+
+        if !uni_ata_usdc.is_owned_by(uni_admin.key()) {
+            return Err(ProgramError::IllegalOwner);
+        }
+
+        if !treasury.is_owned_by(vire_account.key()) {
+            return Err(ProgramError::IllegalOwner);
+        }
+
+
+        // Fee calculations
         let transaction_fee = u64::from_le_bytes(vire_account_data.transaction_fee_student);
         let tution_fee = u64::from_le_bytes(subject_account_data.tution_fee);
-        let max_semester = u64::from_le_bytes(subject_account_data.max_semester);
 
-        // Now perform calculations with compatible numeric types
-        let tution_fee_per_sem = tution_fee.checked_div(max_semester).unwrap();
+        // Final Fee Distribution
+        let tution_fee_per_sem = tution_fee.checked_div(max_semesters).unwrap();
         let protocol_fee = tution_fee_per_sem.checked_div(100).unwrap() * transaction_fee;
 
         // student to treasury
@@ -83,8 +125,7 @@ impl <'a> PayTutionFeeContext<'a> for &[AccountInfo] {
             authority: student,
             amount: protocol_fee,
             decimals: Mint::from_account_info(mint_usdc)?.decimals(),
-        }
-        .invoke()?;
+        }.invoke()?;
 
         // student to uni_ata_usdc
         pinocchio_token::instructions::TransferChecked{
@@ -94,7 +135,7 @@ impl <'a> PayTutionFeeContext<'a> for &[AccountInfo] {
             authority: student,
             amount: tution_fee_per_sem,
             decimals: Mint::from_account_info(mint_usdc)?.decimals(),
-        };
+        }.invoke()?;
 
         // Increasing semesters number in student_account pda by 1 (student_account_data.semesters += 1)
         student_account_data.semesters = (u64::from_le_bytes(student_account_data.semesters) + 1).to_le_bytes();

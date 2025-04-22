@@ -1,12 +1,9 @@
-
-
+#![allow(unexpected_cfgs)]
 use instructions::{add_subjects::AddSubjectContext, initialize_student::InitializeStudentContext, initialize_uni::InitializeUniContext, initialize_vire::InitializeVireContext, pay_tution_fee::PayTutionFeeContext, unstake::Unstake, vire_instructions::VireInstruction};
 use pinocchio::{account_info::AccountInfo, entrypoint, program_error::ProgramError, pubkey::Pubkey, ProgramResult};
 
-
 mod instructions;
 mod states;
-
 pub use states::*;
 
 
@@ -30,7 +27,7 @@ pub fn process_instruction(
         VireInstruction::InitializeStudent => accounts.initialize_student(&data.try_into()?),
         VireInstruction::PayTutionFee => accounts.pay_tution_fee(),
         VireInstruction::UnStake => accounts.unstake(),
-    }
+    }?;
 
-    
+    Ok(())
 }

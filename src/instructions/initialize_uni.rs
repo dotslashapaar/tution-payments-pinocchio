@@ -41,24 +41,24 @@ impl <'a> InitializeUniContext <'a> for &[AccountInfo] {
             return Err(ProgramError::NotEnoughAccountKeys);
         };
 
-        // Adding(setting-up(path)) the data to state (Read-Write)
-        let mut uni_account_data = *bytemuck::try_from_bytes_mut::<UniAccount>(&mut uni_account.try_borrow_mut_data()?)
-        .map_err(|_| ProgramError::InvalidAccountData)?;   
 
-        // Adding(setting-up(path)) the data to state (Read-Only)
-        let vire_account_data = *bytemuck::try_from_bytes::<VireAccount>(&mut vire_account.try_borrow_data()?)
-        .map_err(|_| ProgramError::InvalidAccountData)?;   
+        // Check if uni_admin is a signer
+        if !uni_admin.is_signer() {
+            return Err(ProgramError::MissingRequiredSignature);
+        }
 
-
-        // doing some checks for accounts
-        assert!(uni_admin.is_signer());
-        assert!(vire_account.is_owned_by(&crate::ID));
+        // Verify vire_account is owned by the current program
+        if !vire_account.is_owned_by(&crate::ID) {
+            return Err(ProgramError::IncorrectProgramId);
+        }
 
         let uni_seeds_with_bump = &[uni_admin.key().as_ref(), vire_account.key().as_ref(), &[args.bump]];
         let uni_account_derived = pubkey::create_program_address(uni_seeds_with_bump, &crate::ID)?;
 
-        // checking both created pda account and input pda accounts are same
-        assert!(uni_account_derived == uni_account.key().as_ref());
+        // Ensure derived PDA matches the provided uni_account
+        if uni_account_derived != uni_account.key().as_ref() {
+            return Err(ProgramError::InvalidSeeds);
+        }
         let bump_ref = &[args.bump];
         
         // creating signer seeds vire pda 
@@ -74,20 +74,23 @@ impl <'a> InitializeUniContext <'a> for &[AccountInfo] {
         }
         .invoke_signed(&[signer])?;
 
-        
-        // Adding(setting-up(adding)) the data to state (Read-Write)
-        uni_account_data.clone_from(&UniAccount { 
-            uni_key: *uni_account.key(), 
-            vire_key: *vire_account.key(), 
-            uni_id: vire_account_data.uni_number, 
-            subject_number: (0u64).to_le_bytes(), //<----------
-            student_number: (0u64).to_le_bytes(), //<----------
-            uni_bump: args.bump
-        });
+        let mut vire_data_ref = vire_account.try_borrow_mut_data()?;
+        let vire_account_data = bytemuck::try_from_bytes_mut::<VireAccount>(&mut vire_data_ref)
+            .map_err(|_| ProgramError::InvalidAccountData)?;
 
-        // Adding(setting-up(path)) the data to state (Read-Write)
-        let mut vire_account_data = *bytemuck::try_from_bytes_mut::<VireAccount>(&mut vire_account.try_borrow_mut_data()?)
-        .map_err(|_| ProgramError::InvalidAccountData)?;   
+        let mut uni_data_ref = uni_account.try_borrow_mut_data()?;
+        let uni_account_data = bytemuck::try_from_bytes_mut::<UniAccount>(&mut uni_data_ref)
+            .map_err(|_| ProgramError::InvalidAccountData)?;
+
+        // Direct field assignments (zero-copy approach)
+        uni_account_data.uni_key = *uni_account.key();
+        uni_account_data.vire_key = *vire_account.key();
+        uni_account_data.uni_id = vire_account_data.uni_number;
+        uni_account_data.subject_number = (0u64).to_le_bytes();     //<----------
+        uni_account_data.student_number = (0u64).to_le_bytes();     //<----------
+        uni_account_data.uni_bump = args.bump;
+
+        
 
         // increasing uni_number in vire_account by 1 (vire_account_data.uni_number += 1;)
         let mut num = u64::from_le_bytes(vire_account_data.uni_number);
