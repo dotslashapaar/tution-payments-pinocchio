@@ -6,6 +6,8 @@
 
 Vire Protocol is a decentralized university tuition management system built on Solana using the Pinocchio framework. It facilitates university registration, subject creation, student enrollment, tuition payments, and degree verification through blockchain technology.
 
+<img width="674" alt="415938590-d7b2a622-333c-4bcf-a779-3aab2183e1d3" src="https://github.com/user-attachments/assets/7baa3754-90fd-442c-9331-66b81d059220" />
+
 
 ## Features
 
