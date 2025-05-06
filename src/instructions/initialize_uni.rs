@@ -86,8 +86,8 @@ impl <'a> InitializeUniContext <'a> for &[AccountInfo] {
         uni_account_data.uni_key = *uni_account.key();
         uni_account_data.vire_key = *vire_account.key();
         uni_account_data.uni_id = vire_account_data.uni_number;
-        uni_account_data.subject_number = (0u64).to_le_bytes();     //<----------
-        uni_account_data.student_number = (0u64).to_le_bytes();     //<----------
+        uni_account_data.subject_number = (0u64).to_le_bytes();     
+        uni_account_data.student_number = (0u64).to_le_bytes();     
         uni_account_data.uni_bump = args.bump;
 
         

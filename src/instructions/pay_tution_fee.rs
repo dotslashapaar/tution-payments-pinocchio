@@ -1,6 +1,6 @@
 use bytemuck;
 use pinocchio::{account_info::AccountInfo, program_error::ProgramError, sysvars::{clock::Clock, Sysvar}, ProgramResult};
-use pinocchio_token::state::Mint;
+use pinocchio_token::state::{Mint, TokenAccount};
 
 use crate::{student_account::StudentAccount, subject_account::SubjectAccount, uni_account::UniAccount, vire_account::VireAccount};
 
@@ -64,50 +64,58 @@ impl <'a> PayTutionFeeContext<'a> for &[AccountInfo] {
         // Update first semester time if needed
         if student_semesters == 1 {
             let current_time = Clock::get()?.unix_timestamp.to_le_bytes();
+            // let current_time = Clock::get()?.unix_timestamp;
             student_account_data.time_start = current_time; 
         }
 
-        // Doing some checks for accounts
-        // Check if student is a signer
-        if !student.is_signer() {
-            return Err(ProgramError::MissingRequiredSignature);
-        }
 
-        // Verify uni_admin key matches the stored key in uni_account
-        if uni_admin.key() != &uni_account_data.uni_key {
-            return Err(ProgramError::InvalidArgument);
-        }
+        // // // These checks are not COMPULSORY
+        // // Doing some checks for accounts
+        // // Check if student is a signer
+        // if !student.is_signer() {
+        //     return Err(ProgramError::MissingRequiredSignature);
+        // }
 
-        // Verify program-owned accounts
-        if !student_account.is_owned_by(&crate::ID) {
-            return Err(ProgramError::IncorrectProgramId);
-        }
+        // // Verify uni_admin key matches the stored key in uni_account
+        // if uni_admin.key() != &uni_account_data.uni_key {
+        //     return Err(ProgramError::InvalidArgument);
+        // }
 
-        if !subject_account.is_owned_by(&crate::ID) {
-            return Err(ProgramError::IncorrectProgramId);
-        }
+        // // Verify program-owned accounts
+        // if !student_account.is_owned_by(&crate::ID) {//(not compsulion)
+        //     return Err(ProgramError::IncorrectProgramId);
+        // }
 
-        if !uni_account.is_owned_by(&crate::ID) {
-            return Err(ProgramError::IncorrectProgramId);
-        }
+        // if !subject_account.is_owned_by(&crate::ID) {
+        //     return Err(ProgramError::IncorrectProgramId);
+        // }
 
-        if !vire_account.is_owned_by(&crate::ID) {
-            return Err(ProgramError::IncorrectProgramId);
-        }
+        // if !uni_account.is_owned_by(&crate::ID) {
+        //     return Err(ProgramError::IncorrectProgramId);
+        // }
 
-        // Verify token account ownerships
-        if !student_ata_usdc.is_owned_by(student.key()) {
-            return Err(ProgramError::IllegalOwner);
-        }
+        // if !vire_account.is_owned_by(&crate::ID) {
+        //     return Err(ProgramError::IncorrectProgramId);
+        // }
 
-        if !uni_ata_usdc.is_owned_by(uni_admin.key()) {
-            return Err(ProgramError::IllegalOwner);
-        }
+        // // Use from_account_info
+        // // // Verify token account ownerships
+        // // if !TokenAccount::from_account_info(student_ata_usdc)?;.(student.key()) { //token.
+        // //     return Err(ProgramError::IllegalOwner);
+        // // }
 
-        if !treasury.is_owned_by(vire_account.key()) {
-            return Err(ProgramError::IllegalOwner);
-        }
+        // // if !uni_ata_usdc.is_owned_by(uni_admin.key()) {
+        // //     return Err(ProgramError::IllegalOwner);
+        // // }
 
+        // // if !treasury.is_owned_by(vire_account.key()) {
+        // //     return Err(ProgramError::IllegalOwner);
+        // // }
+
+        // // {
+        // //     let student_ata_usdc = TokenAccount::from_account_info(student_ata_usdc)?.owner();
+
+        // // }
 
         // Fee calculations
         let transaction_fee = u64::from_le_bytes(vire_account_data.transaction_fee_student);

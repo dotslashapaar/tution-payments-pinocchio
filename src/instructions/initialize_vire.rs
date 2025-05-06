@@ -1,6 +1,7 @@
 use bytemuck::{Pod, Zeroable};
 use pinocchio::{account_info::AccountInfo, instruction::Signer, program_error::ProgramError, pubkey, seeds, sysvars::{rent::Rent, Sysvar}, ProgramResult};
 use pinocchio_system::instructions::CreateAccount;
+use pinocchio_token::instructions::InitializeAccount;
 
 use crate::vire_account::VireAccount;
 
@@ -109,18 +110,11 @@ impl <'a> InitializeVireContext <'a> for &[AccountInfo] {
         //     vire_bump: args.bump 
         // });
 
-        pinocchio_token::instructions::InitializeAccount3{
-            account: treasury,
-            mint: mint_usdc,
-            owner: vire_account.key(),
-        }.invoke()?;
-        
-        // InitializeAccount{
-        //     account: todo!(),
-        //     mint: todo!(),
-        //     owner: todo!(),
-        //     rent_sysvar: todo!(),  //<-------
-        // };
+        // pinocchio_token::instructions::InitializeAccount3{ //(Do it in front-end for better CU's)
+        //     account: treasury,
+        //     mint: mint_usdc,
+        //     owner: vire_account.key(),
+        // }.invoke()?;
 
         Ok(())
     }

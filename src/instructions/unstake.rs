@@ -56,6 +56,8 @@ impl <'a> Unstake<'a> for &[AccountInfo] {
         
         let current_timestamp = Clock::get()?.unix_timestamp;
         let start_timestamp = i64::from_le_bytes(student_account_data.time_start);
+        // let start_timestamp = student_account_data.time_start;
+
 
         // Main check (Verifies whether the degree duration has been completed)
         // Check that degree duration is not yet completed
@@ -63,21 +65,23 @@ impl <'a> Unstake<'a> for &[AccountInfo] {
             return Err(ProgramError::InvalidArgument);
         }
 
-        // Doing some checks for accounts
-        // Check if student is a signer
-        if !student.is_signer() {
-            return Err(ProgramError::MissingRequiredSignature);
-        }
+        
+        // // These checks are not COMPULSORY
+        // // Doing some checks for accounts
+        // // Check if student is a signer
+        // if !student.is_signer() {
+        //     return Err(ProgramError::MissingRequiredSignature);
+        // }
 
-        // Verify student_account is owned by the current program
-        if !student_account.is_owned_by(&crate::ID) {
-            return Err(ProgramError::IncorrectProgramId);
-        }
+        // // // Verify student_account is owned by the current program
+        // // if !student_account.is_owned_by(&crate::ID) {
+        // //     return Err(ProgramError::IncorrectProgramId);
+        // // }
 
-        // Verify subject_account is owned by the current program
-        if !subject_account.is_owned_by(&crate::ID) {
-            return Err(ProgramError::IncorrectProgramId);
-        }
+        // // // Verify subject_account is owned by the current program
+        // // if !subject_account.is_owned_by(&crate::ID) {
+        // //     return Err(ProgramError::IncorrectProgramId);
+        // // } //(super extra)
         
 
         let student_account_seeds = &[student.key().as_ref(), subject_account.key().as_ref()];
@@ -104,7 +108,7 @@ impl <'a> Unstake<'a> for &[AccountInfo] {
         
         SetAuthority{
             account: student_card_ata,
-            authority: student_account, // <--- student or student_account who??
+            authority: student_account,
             authority_type: pinocchio_token::instructions::AuthorityType::FreezeAccount,
             new_authority: Some(student.key()),
         }

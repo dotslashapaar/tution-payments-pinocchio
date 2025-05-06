@@ -64,21 +64,22 @@ impl <'a> AddSubjectContext <'a> for &[AccountInfo] {
             return Err(ProgramError::NotEnoughAccountKeys);
         };
 
-        // Doing some checks for accounts
-        // Check if uni_admin is a signer
-        if !uni_admin.is_signer() {
-            return Err(ProgramError::MissingRequiredSignature);
-        }
+        // // These checks are not Compulsory
+        // // Doing some checks for accounts
+        // // Check if uni_admin is a signer
+        // if !uni_admin.is_signer() {
+        //     return Err(ProgramError::MissingRequiredSignature);
+        // }
 
-        // Verify uni_account is owned by the current program
-        if !uni_account.is_owned_by(&crate::ID) {
-            return Err(ProgramError::IncorrectProgramId);
-        }
+        // // Verify uni_account is owned by the current program
+        // if !uni_account.is_owned_by(&crate::ID) {
+        //     return Err(ProgramError::IncorrectProgramId);
+        // }
 
-        // Verify vire_account is owned by the current program
-        if !vire_account.is_owned_by(&crate::ID) {
-            return Err(ProgramError::IncorrectProgramId);
-        }
+        // // Verify vire_account is owned by the current program
+        // if !vire_account.is_owned_by(&crate::ID) {
+        //     return Err(ProgramError::IncorrectProgramId);
+        // }
 
         let mut uni_data_ref_mut = uni_account.try_borrow_mut_data()?;
         let uni_account_data = bytemuck::try_from_bytes_mut::<UniAccount>(&mut uni_data_ref_mut)
@@ -100,13 +101,6 @@ impl <'a> AddSubjectContext <'a> for &[AccountInfo] {
             return Err(ProgramError::InvalidSeeds);
         }
         let bump_ref = &[args.bump];  
-
-
-        // <---Help--->
-        // // creating signer seeds vire pda 
-        // let signer_seeds = seeds!(uni_account.key().as_ref(), &[u64::from_le_bytes(uni_account_data.subject_number).try_into().unwrap()], bump_ref);
-        // let signer = Signer::from(&signer_seeds);
-        
         
 
         // creating signer seeds vire pda (subject_acccount)
@@ -162,22 +156,16 @@ impl <'a> AddSubjectContext <'a> for &[AccountInfo] {
 
 
 
-        // <---Making Collection---> (How can I add metadata)
+        // <---Making Collection For Subject---> (How can I add metadata (In FrontEnd))
 
-        // InitializeMint{
-        //     mint: todo!(),
-        //     rent_sysvar: todo!(), //<--------- Help
-        //     decimals: todo!(),
-        //     mint_authority: todo!(),
-        //     freeze_authority: todo!(),
-        // };
-        
-        InitializeMint2{
-            mint: collection_mint,
-            decimals: 0,
-            mint_authority: subject_account.key(),
-            freeze_authority: Some(subject_account.key()),
-        }.invoke()?; 
+
+        // // Do the Initialine part in frontend for better CU's
+        // InitializeMint2{    //(Thinking to be optional (doing this in frontend))
+        //     mint: collection_mint,
+        //     decimals: 0,
+        //     mint_authority: subject_account.key(),
+        //     freeze_authority: Some(subject_account.key()),
+        // }.invoke()?; 
 
         MintToChecked{
             mint: collection_mint,
@@ -198,4 +186,39 @@ impl <'a> AddSubjectContext <'a> for &[AccountInfo] {
 
 
 
+// use solana_program::{entrypoint::ProgramResult, program_error::ProgramError};
 
+// fn main() -> ProgramResult {
+//     assert_with_error!(2==1, MyError::CustomError1);
+//     assert_with_error!(2==1, ProgramError::ArithmeticOverflow);
+//     Ok(())
+
+// }
+
+// #[macro_export]
+// macro_rules! assert_with_error {
+//     ($invariant:expr, $error:expr $(,)?) => {
+//         if !($invariant) {
+//             return Err(ProgramError::from($error));
+//         }
+//     };
+//     ($invariant:expr, $error:path $(,)?) => {
+//         if !($invariant) {
+//             return Err($error);
+//         }
+//     };
+// }
+
+// pub enum MyError {
+//     CustomError1,
+//     CustomError2,
+// }
+
+// impl From<MyError> for ProgramError {
+//     fn from(e: MyError) -> Self {
+//         match e {
+//             MyError::CustomError1 => ProgramError::Custom(1),
+//             MyError::CustomError2 => ProgramError::Custom(2),
+//         }
+//     }
+// }

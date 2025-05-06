@@ -47,26 +47,27 @@ impl <'a> InitializeStudentContext <'a> for &[AccountInfo] {
         };
  
 
+        // These checks are not compulsory
         // Doing some checks for accounts
         // Check if student is a signer
-        if !student.is_signer() {
-            return Err(ProgramError::MissingRequiredSignature);
-        }
+        // if !student.is_signer() {
+        //     return Err(ProgramError::MissingRequiredSignature);
+        // }
 
-        // Verify subject_account is owned by the current program
-        if !subject_account.is_owned_by(&crate::ID) {
-            return Err(ProgramError::IncorrectProgramId);
-        }
+        // // Verify subject_account is owned by the current program
+        // if !subject_account.is_owned_by(&crate::ID) {
+        //     return Err(ProgramError::IncorrectProgramId);
+        // }
 
-        // Verify uni_account is owned by the current program
-        if !uni_account.is_owned_by(&crate::ID) {
-            return Err(ProgramError::IncorrectProgramId);
-        }
+        // // Verify uni_account is owned by the current program
+        // if !uni_account.is_owned_by(&crate::ID) {
+        //     return Err(ProgramError::IncorrectProgramId);
+        // }
 
-        // Verify vire_account is owned by the current program
-        if !vire_account.is_owned_by(&crate::ID) {
-            return Err(ProgramError::IncorrectProgramId);
-        }
+        // // Verify vire_account is owned by the current program
+        // if !vire_account.is_owned_by(&crate::ID) {
+        //     return Err(ProgramError::IncorrectProgramId);
+        // }
 
         
         let student_seeds_with_bump = &[student.key().as_ref(), subject_account.key().as_ref(), &[args.bump]];
@@ -102,10 +103,11 @@ impl <'a> InitializeStudentContext <'a> for &[AccountInfo] {
         
 
         let current_time = ((Clock::get()?.unix_timestamp)).to_le_bytes();
+        // let current_time: i64 = Clock::get()?.unix_timestamp;
 
         student_account_data.student_key = *student.key();
         student_account_data.student_id = uni_account_data.student_number;
-        student_account_data.time_start = current_time;  // Assuming time_start is [u8; 8] //<---- how can i make it better //time_start: unsafe { std::mem::transmute(current_time) },
+        student_account_data.time_start = current_time; 
         student_account_data.semesters = (1u64).to_le_bytes();
         student_account_data.student_bump = args.bump;
 
@@ -114,14 +116,16 @@ impl <'a> InitializeStudentContext <'a> for &[AccountInfo] {
         uni_account_data.student_number = (u64::from_le_bytes(uni_account_data.student_number) + 1).to_le_bytes();
 
 
-        // <---Minting Card Nft---> (How can I add metadata)
+        // <---Minting Card Nft---> (How can I add metadata (In FrontEnd))
 
-        pinocchio_token::instructions::InitializeMint2{
-            mint: card_mint,
-            decimals: 0,
-            mint_authority: student_account.key(),
-            freeze_authority: Some(student_account.key()),
-        }.invoke()?; 
+
+        // // Do the Initialine part in frontend for better CU's
+        // pinocchio_token::instructions::InitializeMint2{   //(Thinking to be optional (doing this in frontend))
+        //     mint: card_mint,
+        //     decimals: 0,
+        //     mint_authority: student_account.key(),
+        //     freeze_authority: Some(student_account.key()),
+        // }.invoke()?; 
 
         pinocchio_token::instructions::MintToChecked{
             mint: card_mint,
@@ -137,7 +141,7 @@ impl <'a> InitializeStudentContext <'a> for &[AccountInfo] {
 
         SetAuthority{
             account: student_card_ata,
-            authority: student, // <--- are we just setting freezeauth or this auth field also??
+            authority: student, 
             authority_type: pinocchio_token::instructions::AuthorityType::FreezeAccount,
             new_authority: Some(student_account.key()),
         }.invoke()?;
